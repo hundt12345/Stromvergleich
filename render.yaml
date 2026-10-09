@@ -1,0 +1,22 @@
+# Render Blueprint (https://render.com) – wird beim Anlegen eines Services als
+# Blueprint verwendet oder per "Save as Blueprint" mit einem bestehenden Service
+# verknüpft. Wer den Service im Dashboard anlegt, trägt dieselben Werte dort ein
+# (siehe README → "Deployment auf Render.com").
+services:
+  - type: web
+    name: stromvergleich
+    runtime: python
+    buildCommand: pip install -r requirements.txt && PLAYWRIGHT_BROWSERS_PATH=0 python -m playwright install chromium
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      # Render läuft als Python-Web-Service ohne vorkonfigurierte Browser.
+      # Wichtig: Build und Runtime teilen sich bei Render NUR das Projekt-
+      # verzeichnis inkl. .venv – das übliche ~/.cache/ms-playwright, wohin
+      # `playwright install` standardmäßig lädt, steht zur Laufzeit nicht zur
+      # Verfügung ("Executable doesn't exist ..."). PLAYWRIGHT_BROWSERS_PATH=0
+      # packt den Browser stattdessen ins installierte playwright-Paket im
+      # .venv. Der Wert muss BEIM BUILD (siehe buildCommand) und ZUR LAUFZEIT
+      # gesetzt sein, damit installiert und gesucht derselbe Ort ist.
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: "0"

@@ -21,7 +21,7 @@ SITES = {
 
 async def main(plz: str, kwh: int):
     async with async_playwright() as p:
-        browser = await p.chromium.launch(args=["--no-sandbox"])
+        browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
         for slug, url in SITES.items():
             res = await check_provider(browser, slug, url, plz, kwh)
             best = best_tariff(res["tariffs"])

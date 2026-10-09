@@ -28,6 +28,45 @@ pytest -q tests/test_parser.py          # Textauswertung, offline
 python tests/smoke_check.py 50667 1200  # echte Websites, braucht Internet
 ```
 
+## Deployment auf Render.com
+
+**Problem:** `pip install playwright` installiert nur das Python-Paket, nicht den
+Browser. Und selbst ein `playwright install` im Build-Schritt reicht bei Render
+nicht: Build und Runtime teilen sich nur das Projektverzeichnis inkl. `.venv`.
+Der übliche Ablageort `~/.cache/ms-playwright` steht zur Laufzeit nicht mehr zur
+Verfügung → `BrowserType.launch: Executable doesn't exist ...` und
+„Application startup failed“.
+
+**Lösung:** `PLAYWRIGHT_BROWSERS_PATH=0` – damit packt `playwright install` den
+Browser direkt ins installierte `playwright`-Paket im `.venv`, und das wird vom
+Build mit in die Runtime genommen. Der Wert muss beim Build **und** zur Laufzeit
+gesetzt sein.
+
+Im Render-Dashboard (Settings des Web-Service):
+
+| Feld | Wert |
+|---|---|
+| Build Command | `pip install -r requirements.txt && PLAYWRIGHT_BROWSERS_PATH=0 python -m playwright install chromium` |
+| Start Command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| Environment Variable `PLAYWRIGHT_BROWSERS_PATH` | `0` |
+
+Alternativ dient die `render.yaml` im Repo als Blueprint (Dashboard →
+„New Blueprint“ bzw. „Save as Blueprint“), dann sind die Werte schon gesetzt.
+
+Hinweise:
+
+- **Ein Worker:** Der Start-Befehl absichtlich ohne gunicorn-Multi-Worker – die
+  App hält Browser, Cache und Semaphor im Speicher.
+- **RAM:** Chromium ist speicherhungrig. Bei OOM-Abstürzen `MAX_PARALLEL` in
+  `app/main.py` (3) auf 2 oder 1 senken; für den Free-Plan ist das ratsam.
+- **Fehlende Systembibliotheken:** Falls der Start mit
+  `error while loading shared libraries ...` scheitert, im Build Command
+  `python -m playwright install chromium` durch
+  `python -m playwright install --with-deps chromium` ersetzen (benötigt apt im
+  Build) oder die App als Docker-Service deployen.
+- **Cache:** `data/cache.json` lebt im Projektverzeichnis und ist auf Render
+  pro Deploy nur ephemer – nach jedem Deploy beginnt der Cache leer.
+
 ## Aufbau
 
 ```

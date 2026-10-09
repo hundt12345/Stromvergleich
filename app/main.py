@@ -43,7 +43,19 @@ def _save_cache(cache: dict) -> None:
 async def lifespan(app: FastAPI):
     state["providers"] = load_providers()
     state["pw"] = await async_playwright().start()
-    state["browser"] = await state["pw"].chromium.launch(args=["--no-sandbox"])
+    try:
+        # --disable-dev-shm-usage: Container (z. B. Render) haben eine kleine
+        # /dev/shm-Partition; ohne die Option stürzt Chromium bei mehreren Tabs ab.
+        state["browser"] = await state["pw"].chromium.launch(
+            args=["--no-sandbox", "--disable-dev-shm-usage"])
+    except Exception as exc:
+        if "Executable doesn't exist" in str(exc):
+            raise RuntimeError(
+                "Chromium-Browser fehlt. Lokal: `python -m playwright install --with-deps chromium`. "
+                "Auf Render: Build Command und PLAYWRIGHT_BROWSERS_PATH=0 wie in README "
+                "→ 'Deployment auf Render.com' eintragen."
+            ) from exc
+        raise
     state["sem"] = asyncio.Semaphore(MAX_PARALLEL)
     state["cache"] = _load_cache()
     yield
