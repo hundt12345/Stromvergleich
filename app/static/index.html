@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stromvergleich – alle Anbieter aus StromAuskunft</title>
+<style>
+  :root { --bg:#f5f7fa; --card:#fff; --ink:#1d2430; --muted:#6b7280; --ok:#127a3c; --bad:#b42318; --warn:#9a6700; --line:#e5e7eb; --accent:#2563eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:20px 24px; background:#111827; color:#fff; }
+  header h1 { margin:0; font-size:20px; }
+  header p { margin:4px 0 0; color:#cbd5e1; font-size:14px; }
+  main { padding:20px 24px; max-width:1400px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  form { display:flex; gap:12px; flex-wrap:wrap; align-items:end; }
+  label { display:flex; flex-direction:column; font-size:13px; color:var(--muted); gap:4px; }
+  input { padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:15px; width:160px; }
+  button { padding:9px 16px; background:var(--accent); color:#fff; border:0; border-radius:6px; font-size:15px; cursor:pointer; }
+  button:disabled { background:#94a3b8; cursor:default; }
+  .stats { display:flex; gap:20px; flex-wrap:wrap; margin-top:12px; font-size:14px; }
+  .stats b { font-size:18px; }
+  .bar { height:8px; background:#e5e7eb; border-radius:4px; overflow:hidden; margin-top:10px; }
+  .bar > div { height:100%; background:var(--accent); width:0%; transition:width .2s; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:#f9fafb; position:sticky; top:0; z-index:1; }
+  td.num { text-align:right; white-space:nowrap; }
+  .ok { color:var(--ok); font-weight:600; }
+  .bad { color:var(--bad); font-weight:600; }
+  .unk { color:var(--muted); }
+  .warn { color:var(--warn); }
+  .small { font-size:12px; color:var(--muted); }
+  .table-wrap { max-height:560px; overflow:auto; border:1px solid var(--line); border-radius:8px; }
+  .top5 table td, .top5 table th { font-size:14px; }
+  .toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:8px; }
+  .toolbar label { flex-direction:row; align-items:center; color:var(--ink); }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Stromvergleich – alle Anbieter aus der StromAuskunft-Liste</h1>
+  <p>Jeder Anbieter wird live abgefragt. Angezeigt werden Grundgebühr und Arbeitspreis ohne Boni. Jahreskosten = Verbrauch × Arbeitspreis + 12 × Grundgebühr.</p>
+</header>
+<main>
+  <section class="card">
+    <form id="form">
+      <label>Postleitzahl
+        <input id="plz" name="plz" inputmode="numeric" pattern="\d{5}" placeholder="z. B. 50667" required>
+      </label>
+      <label>Jährlicher Stromverbrauch (kWh)
+        <input id="kwh" name="kwh" type="number" min="100" max="50000" step="50" placeholder="z. B. 1200" required>
+      </label>
+      <button id="start" type="submit">Vergleich starten</button>
+    </form>
+    <div class="stats" id="stats"></div>
+    <div class="bar"><div id="bar"></div></div>
+    <div class="small" id="status" style="margin-top:8px"></div>
+  </section>
+
+  <section class="card top5" id="top5card" hidden>
+    <h2 style="margin:0 0 10px;font-size:17px">Top 5 nach Jahreskosten (ohne Boni)</h2>
+    <table>
+      <thead><tr><th>#</th><th>Anbieter</th><th>Sitz</th><th class="num">Grundgebühr €/Mon.</th><th class="num">Arbeitspreis ct/kWh</th><th class="num">Jahreskosten €</th><th>Quelle / Hinweis</th></tr></thead>
+      <tbody id="top5"></tbody>
+    </table>
+    <div class="small" id="top5note" style="margin-top:8px"></div>
+  </section>
+
+  <section class="card">
+    <div class="toolbar">
+      <strong>Alle Anbieter</strong>
+      <label><input type="checkbox" id="onlyInfo"> nur Anbieter mit gefundenen Informationen</label>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Anbieter</th><th>Sitz</th><th>Website</th><th>Infos gefunden</th><th>PLZ beliefert</th>
+            <th class="num">Grundgebühr €/Mon.</th><th class="num">Arbeitspreis ct/kWh</th><th class="num">Jahreskosten €</th><th>Hinweis</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let es = null;
+let rowsData = [];
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function fmt(n, d=2) { return n == null ? "–" : Number(n).toLocaleString("de-DE", {minimumFractionDigits:d, maximumFractionDigits:d}); }
+function plzBadge(v) {
+  if (v === true) return '<span class="ok">ja</span>';
+  if (v === false) return '<span class="bad">nein</span>';
+  return '<span class="unk">unbekannt</span>';
+}
+function infoBadge(v) { return v ? '<span class="ok">✓</span>' : '<span class="unk">–</span>'; }
+
+function rowHtml(r) {
+  const web = r.website ? `<a href="${esc(r.website)}" target="_blank" rel="noopener">${esc(new URL(r.website).host)}</a>` : '<span class="unk">keine</span>';
+  const cache = r.from_cache ? ' <span class="small">(Cache)</span>' : '';
+  return `<tr data-slug="${esc(r.slug)}">
+    <td>${esc(r.name)}</td>
+    <td>${esc(r.plz)} ${esc(r.ort)}</td>
+    <td>${web}</td>
+    <td>${infoBadge(r.info_found)}</td>
+    <td>${plzBadge(r.plz_ok)}</td>
+    <td class="num">${fmt(r.gp_month)}</td>
+    <td class="num">${fmt(r.ap_ct)}</td>
+    <td class="num">${fmt(r.annual_eur)}</td>
+    <td class="small">${esc(r.note)}${cache}</td>
+  </tr>`;
+}
+
+function renderRows() {
+  const onlyInfo = $("onlyInfo").checked;
+  const list = rowsData.filter(r => !onlyInfo || r.info_found);
+  $("rows").innerHTML = list.map(rowHtml).join("");
+}
+
+function upsertRow(r) {
+  const i = rowsData.findIndex(x => x.slug === r.slug);
+  if (i >= 0) rowsData[i] = r; else rowsData.push(r);
+}
+
+// Tabelle höchstens einmal pro Animationsframe neu zeichnen (1.387 Zeilen sonst zu langsam)
+let renderPending = false;
+function scheduleRender() {
+  if (renderPending) return;
+  renderPending = true;
+  requestAnimationFrame(() => { renderPending = false; renderRows(); });
+}
+
+function renderStats(total, done, info, plzOk) {
+  $("stats").innerHTML = `
+    <span>Geprüft: <b>${done}</b> / ${total}</span>
+    <span>Informationen gefunden: <b>${info}</b></span>
+    <span>PLZ beliefert: <b>${plzOk}</b></span>`;
+  $("bar").style.width = total ? (100 * done / total) + "%" : "0%";
+}
+
+function renderTop5(top) {
+  $("top5card").hidden = false;
+  $("top5").innerHTML = top.length ? top.map((r, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><b>${esc(r.name)}</b></td>
+      <td>${esc(r.plz)} ${esc(r.ort)}</td>
+      <td class="num">${fmt(r.gp_month)}</td>
+      <td class="num">${fmt(r.ap_ct)}</td>
+      <td class="num"><b>${fmt(r.annual_eur)}</b></td>
+      <td class="small">${esc(r.website || "")}${r.snippet ? "
+" + esc(r.snippet) : ""}</td>
+    </tr>`).join("") : '<tr><td colspan="7">Keine Tarife mit vollständigen Angaben gefunden.</td></tr>';
+}
+
+$("onlyInfo").addEventListener("change", renderRows);
+
+$("form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (es) es.close();
+  rowsData = [];
+  $("rows").innerHTML = "";
+  $("top5").innerHTML = "";
+  $("top5card").hidden = true;
+  $("start").disabled = true;
+  const plz = $("plz").value.trim();
+  const kwh = $("kwh").value.trim();
+  $("status").textContent = "Verbinde …";
+  es = new EventSource(`/api/compare?plz=${encodeURIComponent(plz)}&kwh=${encodeURIComponent(kwh)}`);
+  let total = 0, done = 0;
+  es.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === "start") {
+      total = msg.total;
+      $("status").textContent = `Prüfe ${total} Anbieter für PLZ ${msg.plz} und ${msg.kwh} kWh …`;
+      renderStats(total, 0, 0, 0);
+    } else if (msg.type === "provider") {
+      done = msg.done;
+      upsertRow(msg.row);
+      scheduleRender();
+      const info = rowsData.filter(r => r.info_found).length;
+      const plzOk = rowsData.filter(r => r.plz_ok === true).length;
+      renderStats(total, done, info, plzOk);
+    } else if (msg.type === "done") {
+      es.close();
+      $("start").disabled = false;
+      $("status").textContent = `Fertig. ${msg.stats.info_found} von ${msg.stats.total} Anbietern mit gefundenen Informationen, ${msg.stats.with_website} mit bekannter Website.`;
+      renderTop5(msg.top5);
+    }
+  };
+  es.onerror = () => {
+    $("status").textContent = "Verbindung unterbrochen. Bitte erneut starten.";
+    es.close();
+    $("start").disabled = false;
+  };
+});
+</script>
+</body>
+</html>
